@@ -15,6 +15,26 @@ class MissingCredentialError(RuntimeError):
     """缺少模型凭证时抛出，便于上层给出可操作的提示。"""
 
 
+def _resolve_api_key(settings: Settings) -> str:
+    """取出可用的 API Key 明文。
+
+    Raises:
+        MissingCredentialError: 未配置或配置为空字符串时。
+
+    说明：``.env.example`` 里 ``LLM_API_KEY=`` 就是空值，用户照抄后
+    若只判断 ``None``，空字符串会一路传到第三方 SDK，最终抛出库内部的
+    堆栈（如 ``OpenAIError: Missing credentials``），对使用者毫无指引价值。
+    """
+    secret = settings.llm_api_key
+    plain = secret.get_secret_value() if secret is not None else ""
+    if not plain.strip():
+        raise MissingCredentialError(
+            "缺少模型凭证：请设置环境变量 LLM_API_KEY（本地写入 .env，"
+            "线上交由平台密钥管理下发）。当前值为空。"
+        )
+    return plain
+
+
 def build_chat_model(settings: Settings | None = None) -> BaseChatModel:
     """按配置构造 ChatModel。
 
@@ -22,15 +42,10 @@ def build_chat_model(settings: Settings | None = None) -> BaseChatModel:
         settings: 配置对象，为空则读取全局配置。
 
     Raises:
-        MissingCredentialError: 未配置 ``LLM_API_KEY`` 时。
+        MissingCredentialError: 未配置 ``LLM_API_KEY`` 或配置为空时。
     """
     cfg = settings or get_settings()
-
-    if cfg.llm_api_key is None:
-        raise MissingCredentialError(
-            "缺少模型凭证：请设置环境变量 LLM_API_KEY（本地可写入 .env，"
-            "线上请用平台 Secret 注入），不要把密钥写进代码或提交到仓库。"
-        )
+    api_key = _resolve_api_key(cfg)
 
     kwargs: dict = {
         "model": cfg.llm_model,
@@ -39,7 +54,7 @@ def build_chat_model(settings: Settings | None = None) -> BaseChatModel:
         "timeout": cfg.timeout_seconds,
         "max_retries": cfg.max_retries,
         # SecretStr 在此处才解开，避免日志/异常栈里出现明文
-        "api_key": cfg.llm_api_key.get_secret_value(),
+        "api_key": api_key,
     }
     if cfg.llm_base_url:
         kwargs["base_url"] = cfg.llm_base_url

@@ -11,13 +11,21 @@ dependencies = [
     "langchain>=1.0,<2.0",
     "langchain-core>=1.0,<2.0",
     "langchain-openai>=1.0,<2.0",
+    # app/rag/qa.py 直接 import，必须显式声明，否则干净环境下导入即失败
+    "langchain-text-splitters>=0.3",
     "pydantic>=2.7,<3.0",
     "pydantic-settings>=2.2,<3.0",
     "python-dotenv>=1.0,<2.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    # langchain_core.embeddings.FakeEmbeddings 内部依赖 numpy；
+    # 测试用它替代真实向量化，因此 dev 依赖必须包含，否则 CI 报 NameError: np
+    "numpy>=1.26",
+]
 
 [project.scripts]
 dikong = "app.cli:main"

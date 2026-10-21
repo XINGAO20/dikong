@@ -22,6 +22,31 @@ cp .env.example .env               # 然后填入 LLM_API_KEY
 > **密钥纪律**：`LLM_API_KEY` 只写在 `.env`（已被 `.gitignore` 排除）或平台的 Secret 中。
 > 任何时候不要把密钥写进源码、提交信息或 issue。
 
+## 先跑 demo（不需要 Key）
+
+克隆下来直接跑，**离线、不联网、不需要任何凭证**：
+
+```bash
+python -m examples.demo          # 完整演示，打印三条链路的执行过程
+python -m examples.demo --check  # 自检：跑通即返回 0，失败返回 1，适合 CI
+python -m examples.demo --live   # 真实模型调用，需已配置 LLM_API_KEY
+```
+
+离线模式用 `ScriptedChatModel`（剧本模型）替代真实模型，业务代码与线上完全一致——
+换的只是模型实例。这正是 demo 要演示的重点：**用可替换的模型实现离线可测**。
+
+输出示例（节选）：
+
+```
+演示 1 / 3 · Agent + 工具调用
+提问：帮我查一下运单 DK20261021001 的状态和运费
+消息轨迹：
+  1. HumanMessage   → 帮我查一下运单 DK20261021001 的状态和运费
+  2. AIMessage      → 请求调用工具: get_waybill
+  3. ToolMessage    → 工具返回: 运单号 DK20261021001：深圳南山起降点 → 珠海金湾起降点...
+  4. AIMessage      → 运单 DK20261021001 已签收，运费 380.00 元。
+```
+
 ## 用法
 
 ```bash
@@ -40,24 +65,27 @@ python -m app.cli rag "单架次最大载荷是多少"
 ```
 app/
 ├── config.py               # pydantic-settings 配置，密钥用 SecretStr
-├── core/llm.py             # 模型工厂，缺凭证时明确报错
+├── core/
+│   ├── llm.py              # 模型工厂，缺凭证时明确报错
+│   └── fakes.py            # 剧本模型替身，供 demo 与测试共用
 ├── chains/summary_chain.py # LCEL：prompt | model | parser
 ├── agents/
 │   ├── tools.py            # 业务工具（只读、无副作用）
 │   └── waybill_agent.py    # LangChain 1.x create_agent 装配
 ├── rag/qa.py               # 切分 + 向量库 + 检索问答链
 └── cli.py                  # 命令行入口
-tests/                      # 30 个用例，全部离线，无需 API Key
+examples/demo.py            # 最小可运行 demo（默认离线）
+tests/                      # 42 个用例，全部离线，无需 API Key
 ```
 
 ## 测试
 
 ```bash
-pytest -q            # 30 passed，不联网、不需要 API Key
+pytest -q            # 42 passed，不联网、不需要 API Key
 ruff check .         # 代码风格
 ```
 
-测试用 `tests/fakes.py` 里的 `ScriptedChatModel` 替身：LangChain 1.x 的 `create_agent` 会强制调用模型的 `bind_tools`，而内置的 `GenericFakeChatModel` 未实现该方法（会抛 `NotImplementedError`），因此需要自定义替身。
+测试用 `app/core/fakes.py` 的 `ScriptedChatModel` 替身（`tests/fakes.py` 仅做转发）：LangChain 1.x 的 `create_agent` 会强制调用模型的 `bind_tools`，而内置的 `GenericFakeChatModel` 未实现该方法（会抛 `NotImplementedError`），因此需要自定义替身。
 
 ## 设计约定
 
